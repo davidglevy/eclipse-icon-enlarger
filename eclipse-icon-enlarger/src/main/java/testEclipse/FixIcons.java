@@ -235,17 +235,5 @@ public class FixIcons {
 			BufferedImage scaledBI = Scalr.resize(originalImage, Scalr.Method.ULTRA_QUALITY, scaledWidth, scaledHeight);
 			return scaledBI;
 		}
-		
-//		int imageType = preserveAlpha ? BufferedImage.TYPE_INT_RGB
-//				: BufferedImage.TYPE_INT_ARGB;
-//		BufferedImage scaledBI = new BufferedImage(scaledWidth, scaledHeight,
-//				imageType == 0 ? 5 : imageType);
-//		Graphics2D g = scaledBI.createGraphics();
-//		if (preserveAlpha) {
-//			g.setComposite(AlphaComposite.Src);
-//		}
-//		g.drawImage(originalImage, 0, 0, scaledWidth, scaledHeight, null);
-//		g.dispose();
-//		return scaledBI;
 	}
 }
