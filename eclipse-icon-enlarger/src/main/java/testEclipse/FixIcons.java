@@ -1,7 +1,5 @@
 package testEclipse;
 
-import java.awt.geom.AffineTransform;
-import java.awt.image.AffineTransformOp;
 import java.awt.image.BufferedImage;
 import java.io.BufferedInputStream;
 import java.io.File;
@@ -25,6 +23,10 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.apache.commons.io.IOUtils;
 import org.apache.log4j.Logger;
+import org.imgscalr.Scalr;
+
+import com.mortennobel.imagescaling.AdvancedResizeOp;
+import com.mortennobel.imagescaling.ResampleOp;
 
 /**
  * Small utility to double the size of eclipse icons for QHD monitors.
@@ -91,9 +93,11 @@ public class FixIcons {
 
 	}
 
-	public static void processDirectory(File directory, File outputDirectory) throws Exception {
-		logger.info("Processing directory [" + directory.getAbsolutePath() + "]");
-		
+	public static void processDirectory(File directory, File outputDirectory)
+			throws Exception {
+		logger.info("Processing directory [" + directory.getAbsolutePath()
+				+ "]");
+
 		for (File file : directory.listFiles()) {
 			if (file.isDirectory()) {
 				File targetDir = new File(outputDirectory.getAbsolutePath()
@@ -105,71 +109,80 @@ public class FixIcons {
 			} else {
 				File targetFile = new File(outputDirectory.getAbsolutePath()
 						+ File.separator + file.getName());
-				
-				
+
 				if (file.getName().toLowerCase().endsWith(".zip")
 						|| file.getName().toLowerCase().endsWith(".jar")) {
-					logger.info("Processing archive file: " + file.getAbsolutePath());
-					
+					logger.info("Processing archive file: "
+							+ file.getAbsolutePath());
+
 					ZipFile zipSrc = new ZipFile(file);
-					Enumeration<ZipEntry> srcEntries = (Enumeration<ZipEntry>) zipSrc.entries();
-					
-					ZipOutputStream outStream = new ZipOutputStream(new FileOutputStream(targetFile));
-					
+					Enumeration<? extends ZipEntry> srcEntries = zipSrc.entries();
+
+					ZipOutputStream outStream = new ZipOutputStream(
+							new FileOutputStream(targetFile));
+
 					while (srcEntries.hasMoreElements()) {
 						ZipEntry entry = (ZipEntry) srcEntries.nextElement();
-			            logger.info("Processing zip entry ["+ entry.getName() + "]");
-						
+						logger.info("Processing zip entry [" + entry.getName()
+								+ "]");
+
 						ZipEntry newEntry = new ZipEntry(entry.getName());
-			            outStream.putNextEntry(newEntry);
+						try {
+							outStream.putNextEntry(newEntry);
+						} catch (Exception e) {
+							if (!e.getMessage().startsWith("duplicate entry: ")) {
+								logger.error("error: ", e);
+							} else {
+								logger.info(e.getMessage(), e);
+							}
+							outStream.closeEntry();
+							continue;
+						}
 
-			            BufferedInputStream bis = new BufferedInputStream(zipSrc
-			                            .getInputStream(entry));
+						BufferedInputStream bis = new BufferedInputStream(
+								zipSrc.getInputStream(entry));
 
-			            if (ImageType.findType(entry.getName()) != null) {
-			            	processImage(entry.getName(), bis, outStream);
-			            } else {
-			            	IOUtils.copy(bis, outStream);
-			            }
-			            
-			            
-			            outStream.closeEntry();
-			            bis.close();						
+						if (ImageType.findType(entry.getName()) != null) {
+							processImage(zipSrc.getName() + "!/" + entry.getName(), bis, outStream);
+						} else {
+							IOUtils.copy(bis, outStream);
+						}
+
+						outStream.closeEntry();
+						bis.close();
 					}
-					
+
 					zipSrc.close();
 					outStream.close();
-				}
-				else if (ImageType.findType(file.getName()) != null) {
-					logger.info("Processing image: "+ file.getAbsolutePath());
-					
+				} else if (ImageType.findType(file.getName()) != null) {
+					logger.info("Processing image: " + file.getAbsolutePath());
+
 					FileInputStream inStream = null;
 					FileOutputStream outStream = null;
-					
+
 					try {
 						inStream = new FileInputStream(file);
 						outStream = new FileOutputStream(targetFile);
 						processImage(file.getName(), inStream, outStream);
-					} finally {	
+					} finally {
 						IOUtils.closeQuietly(inStream);
 						IOUtils.closeQuietly(outStream);
 					}
-				}
-				else {
-					logger.info("Processing : "+ file.getAbsolutePath());
+				} else {
+					logger.info("Processing : " + file.getAbsolutePath());
 
 					FileInputStream inStream = null;
 					FileOutputStream outStream = null;
-					
+
 					try {
 						inStream = new FileInputStream(file);
 						outStream = new FileOutputStream(targetFile);
 						IOUtils.copy(inStream, outStream);
-					} finally {	
+					} finally {
 						IOUtils.closeQuietly(inStream);
 						IOUtils.closeQuietly(outStream);
 					}
-					
+
 				}
 
 			}
@@ -178,43 +191,61 @@ public class FixIcons {
 
 	}
 
-	public static void processImage(String fileName, InputStream input, OutputStream output) throws IOException {
-		
+	public static void processImage(String fileName, InputStream input,
+			OutputStream output) throws IOException {
+
 		logger.info("Scaling image: " + fileName);
-		
+
 		boolean imageWriteStarted = false;
 		try {
 			BufferedImage out = ImageIO.read(input);
 
 			int outWidth = out.getWidth() * 2;
 			int outHeight = out.getHeight() * 2;
-			/*
-			ResampleOp resampleOp = new ResampleOp(outWidth,
-					outHeight);
-			BufferedImage rescaledOut = resampleOp.filter(out, null);
-			*/
-			
-		    AffineTransform scaleTransform = AffineTransform.getScaleInstance(2, 2);
-		    AffineTransformOp bilinearScaleOp = new AffineTransformOp(scaleTransform, AffineTransformOp.TYPE_BILINEAR);
-		    BufferedImage rescaledOut= bilinearScaleOp.filter(
-		            out,
-		            new BufferedImage(outWidth, outHeight, out.getType()));
-			
-			imageWriteStarted = true;
-			
-			
-			ImageIO.write(rescaledOut, ImageType.findType(fileName).name(), output);
-			
+
+			BufferedImage rescaledOut = createResizedCopy(out, outWidth, outHeight);
+
+			ImageIO.write(rescaledOut, ImageType.findType(fileName).name(),
+					output);
+
 		} catch (Exception e) {
 			if (imageWriteStarted) {
-				throw new RuntimeException("Failed to scale image [" + fileName + "]: " + e.getMessage(), e);
-			}
-			else
-			{
-				logger.error("Unable to scale ["+ fileName+ "]: " + e.getMessage(), e);
+				throw new RuntimeException("Failed to scale image [" + fileName
+						+ "]: " + e.getMessage(), e);
+			} else {
+				logger.error(
+						"Unable to scale [" + fileName + "]: " + e.getMessage(),
+						e);
 				IOUtils.copy(input, output);
 			}
 		}
 	}
 
+	private static BufferedImage createResizedCopy(BufferedImage originalImage, int scaledWidth, int scaledHeight) {
+		
+		try {
+			ResampleOp resampleOp = new ResampleOp(scaledWidth,scaledHeight);
+			resampleOp.setUnsharpenMask(AdvancedResizeOp.UnsharpenMask.Normal);
+			BufferedImage scaledBI = resampleOp.filter(originalImage, null);
+
+			return scaledBI;
+		} catch (RuntimeException e) {
+			
+			// Resample failed - maybe the image was too small, try another way (Scalr)
+			BufferedImage scaledBI = Scalr.resize(originalImage, Scalr.Method.ULTRA_QUALITY, scaledWidth, scaledHeight);
+			return scaledBI;
+		}
+		
+//		int imageType = preserveAlpha ? BufferedImage.TYPE_INT_RGB
+//				: BufferedImage.TYPE_INT_ARGB;
+//		BufferedImage scaledBI = new BufferedImage(scaledWidth, scaledHeight,
+//				imageType == 0 ? 5 : imageType);
+//		Graphics2D g = scaledBI.createGraphics();
+//		if (preserveAlpha) {
+//			g.setComposite(AlphaComposite.Src);
+//		}
+//		g.drawImage(originalImage, 0, 0, scaledWidth, scaledHeight, null);
+//		g.dispose();
+//		return scaledBI;
+	}
 }
